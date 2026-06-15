@@ -5,41 +5,19 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-
-// Assume player always play fair
-// Server format: serverLastMove | board arr separate by ','
-// client send format: postion | board arr serparate by ',' 
-// parse message, place move(first available spot), send back response 
-
-/*
-Assume player can cheat
-Client send format: position | board | hashed board + sk
-Check if it the correct board by hasing the sent board with the shared sk
-Reject if not equal
-*/
-
 
 public class Server_rest_moreSecure {
     private static final int PORT = 8080;
-    private static final String SECRET_KEY = System.getenv("SECRET_KEY");
 
     public static void main(String[] args){
         try {
             ServerSocket serverSocket = new ServerSocket(PORT);
             System.out.println("Server listen on port 8080");
             while(true){
-
                 Socket connection = serverSocket.accept();
                 System.out.println("New client connected: " 
                         + connection.getInetAddress() + ":" + connection.getPort());
                 handleClient(connection);
-                
-                
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -57,67 +35,127 @@ public class Server_rest_moreSecure {
             if(clientMsg == null) {
                 connection.close();
                 return;
-            }    
-
-            String[] parts = clientMsg.split("\\|");
-            
-            if(parts.length < 3){
-                connection.close();
-                return;
             }
 
-            // String command = parts[0];
-            int clientPos = Integer.parseInt(parts[0]);
-            String boardStr = parts[1];
-            String clientHMAC = parts[2];
+            String response;
 
-            String calHMAC = generateHMAC(boardStr);
-            if(!calHMAC.equals(clientHMAC)){
-                System.out.println("Expected: " + calHMAC);
-                System.out.println("Received: " + clientHMAC);
-                connection.close();
-                return;
-            }
-
-            System.out.println("Board verified");
-            
-            int lastServerMove = -1;
-
-            // server moves
-            String[] values = boardStr.split(",");
-            for (int i = 0; i < values.length && i < 9; i++) {
-                if ("0".equals(values[i])) {
-                    values[i] = "2";
-                    lastServerMove = i + 1;
-                    break;
+            if("INIT".equals(clientMsg)) {
+                // Send empty board
+                String emptyBoard = "0,0,0,0,0,0,0,0,0";
+                response = emptyBoard + "|READY";
+            } else {
+                // Parse: boardString|position
+                String[] parts = clientMsg.split("\\|");
+                if(parts.length < 2) {
+                    connection.close();
+                    return;
                 }
+
+                String boardStr = parts[0];
+                int playerPos = Integer.parseInt(parts[1]);
+
+                // Process game move
+                response = processMove(boardStr, playerPos);
             }
-            String updatedBoard = String.join(",", values);
 
-            // String response = formatResponse(lastServerMove, updatedBoard);
-            String response = lastServerMove + "|" + updatedBoard;
+            System.out.println("Sending response: " + response);
             out.println(response);
-
             connection.close();
+
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // private static String formatResponse(int lastMove, String board) {        
-    //     return lastMove + "|" + board;
-    // }
-
-    private static String generateHMAC(String boardString){
-        try {
-            Mac sha256HMAC = Mac.getInstance("HmacSHA256");
-            SecretKeySpec secret_key = new SecretKeySpec(SECRET_KEY.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            sha256HMAC.init(secret_key);
-            byte[] hmacData = sha256HMAC.doFinal(boardString.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hmacData);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "";
+    private static String processMove(String boardStr, int playerPos) {
+        String[] values = boardStr.split(",");
+        
+        // Place player move
+        if(playerPos >= 1 && playerPos <= 9 && "0".equals(values[playerPos - 1])) {
+            values[playerPos - 1] = "1";
         }
+
+        // Check if player won
+        int winner = checkWinner(values);
+        if(winner == 1) {
+            String updatedBoard = String.join(",", values);
+            return updatedBoard + "|PLAYER_WON";
+        }
+
+        // Check draw
+        if(isBoardFull(values)) {
+            String updatedBoard = String.join(",", values);
+            return updatedBoard + "|DRAW";
+        }
+
+        // Server makes move (first available 0)
+        int serverPos = -1;
+        for (int i = 0; i < values.length; i++) {
+            if ("0".equals(values[i])) {
+                values[i] = "2";
+                serverPos = i;
+                break;
+            }
+        }
+
+        // Check if server won
+        winner = checkWinner(values);
+        if(winner == 2) {
+            String updatedBoard = String.join(",", values);
+            return updatedBoard + "|SERVER_WON";
+        }
+
+        // Check draw
+        if(isBoardFull(values)) {
+            String updatedBoard = String.join(",", values);
+            return updatedBoard + "|DRAW";
+        }
+
+        // Game continues
+        String updatedBoard = String.join(",", values);
+        return updatedBoard + "|CONTINUE";
+    }
+
+    private static int checkWinner(String[] values) {
+        // Convert to 2D array for easier checking
+        int[][] board = new int[3][3];
+        for (int i = 0; i < 9; i++) {
+            board[i / 3][i % 3] = Integer.parseInt(values[i]);
+        }
+
+        // Check rows
+        for (int i = 0; i < 3; i++) {
+            if (board[i][0] != 0 && board[i][0] == board[i][1] && board[i][1] == board[i][2]) {
+                return board[i][0];
+            }
+        }
+
+        // Check columns
+        for (int j = 0; j < 3; j++) {
+            if (board[0][j] != 0 && board[0][j] == board[1][j] && board[1][j] == board[2][j]) {
+                return board[0][j];
+            }
+        }
+
+        // Check main diagonal
+        if (board[0][0] != 0 && board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
+            return board[0][0];
+        }
+
+        // Check anti-diagonal
+        if (board[0][2] != 0 && board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
+            return board[0][2];
+        }
+
+        return 0;
+    }
+
+    private static boolean isBoardFull(String[] values) {
+        for (String val : values) {
+            if ("0".equals(val)) {
+                return false;
+            }
+        }
+        return true;
     }
 }
