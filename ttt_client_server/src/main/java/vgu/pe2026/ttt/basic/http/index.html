@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tic Tac Toe vs Server</title>
+</head>
+<body>
+
+    <h2>Tic Tac Toe</h2>
+    <h3 id="status">Connecting to server...</h3>
+
+    <table border="1" cellpadding="15">
+        <tr>
+            <td><button id="btn1" onclick="makeMove(1)">---</button></td>
+            <td><button id="btn2" onclick="makeMove(2)">---</button></td>
+            <td><button id="btn3" onclick="makeMove(3)">---</button></td>
+        </tr>
+        <tr>
+            <td><button id="btn4" onclick="makeMove(4)">---</button></td>
+            <td><button id="btn5" onclick="makeMove(5)">---</button></td>
+            <td><button id="btn6" onclick="makeMove(6)">---</button></td>
+        </tr>
+        <tr>
+            <td><button id="btn7" onclick="makeMove(7)">---</button></td>
+            <td><button id="btn8" onclick="makeMove(8)">---</button></td>
+            <td><button id="btn9" onclick="makeMove(9)">---</button></td>
+        </tr>
+    </table>
+
+    <br>
+    <button onclick="initGame()">Restart Game</button>
+
+    <script>
+        const SERVER_URL = 'http://localhost:8080/';
+        let currentBoardStr = "0,0,0,0,0,0,0,0,0";
+        let isGameOver = true;
+
+        // 1. Initialize the game with the server
+        async function initGame() {
+            try {
+                const response = await fetch(SERVER_URL, {
+                    method: 'POST',
+                    body: 'INIT'
+                });
+                const data = await response.text();
+                handleServerResponse(data);
+            } catch (error) {
+                document.getElementById('status').innerHTML = "Error: Cannot connect. Did you add CORS headers to Java?";
+                console.error(error);
+            }
+        }
+
+        // 2. Send a move to the server
+        async function makeMove(position) {
+            if (isGameOver) return;
+
+            const cells = currentBoardStr.split(',');
+            
+            // Do nothing if the clicked cell is not empty ("0")
+            if (cells[position - 1] !== "0") return;
+
+            const payload = currentBoardStr + "|" + position;
+            
+            try {
+                const response = await fetch(SERVER_URL, {
+                    method: 'POST',
+                    body: payload
+                });
+                const data = await response.text();
+                handleServerResponse(data);
+            } catch (error) {
+                document.getElementById('status').innerHTML = "Error communicating with server.";
+                console.error(error);
+            }
+        }
+
+        // 3. Parse the server's response and update the UI
+        function handleServerResponse(data) {
+            const parts = data.split('|');
+            if (parts.length < 2) return;
+
+            currentBoardStr = parts[0];
+            const status = parts[1];
+
+            updateBoardUI(currentBoardStr);
+
+            // Handle the game state text
+            if (status === 'READY' || status === 'CONTINUE') {
+                isGameOver = false;
+                document.getElementById('status').innerHTML = "Your turn (You are X)";
+            } else {
+                isGameOver = true;
+                if (status === 'PLAYER_WON') {
+                    document.getElementById('status').innerHTML = "You Win!";
+                } else if (status === 'SERVER_WON') {
+                    document.getElementById('status').innerHTML = "Server Wins!";
+                } else if (status === 'DRAW') {
+                    document.getElementById('status').innerHTML = "It's a Draw!";
+                }
+            }
+        }
+
+        // 4. Update the text on the buttons based on the board string
+        function updateBoardUI(boardStr) {
+            const cells = boardStr.split(',');
+            
+            for (let i = 0; i < 9; i++) {
+                const btn = document.getElementById('btn' + (i + 1));
+                const value = cells[i];
+                
+                if (value === "1") {
+                    btn.innerHTML = " X ";
+                } else if (value === "2") {
+                    btn.innerHTML = " O ";
+                } else {
+                    btn.innerHTML = "---";
+                }
+            }
+        }
+
+        // Start the game immediately when the page loads
+        window.onload = initGame;
+    </script>
+</body>
+</html>
