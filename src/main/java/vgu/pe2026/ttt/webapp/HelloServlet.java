@@ -1,4 +1,4 @@
-package vgu.pe2026;
+package vgu.pe2026.ttt.webapp;
 
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
